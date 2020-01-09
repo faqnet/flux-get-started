@@ -1,7 +1,4 @@
 
 flux-get-started.iml
-.idea/vcs.xml
-.idea/modules.xml
-.idea/misc.xml
-.idea/codeStyles/codeStyleConfig.xml
+.idea/*
 .DS_Store
