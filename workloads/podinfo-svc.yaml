@@ -6,7 +6,8 @@ metadata:
   labels:
     app: podinfo
 spec:
-  type: ClusterIP
+  type: LoadBalancer
+  sessionAffinity: ClientIP
   selector:
     app: podinfo
   ports:
