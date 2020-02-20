@@ -27,49 +27,128 @@ spec:
         app: podinfo
     spec:
       initContainers:
-      - name: init
-        image: alpine:3.10
-        command:
-        - sleep
-        - "1"
+        - name: init
+          image: alpine:3.10
+          command:
+            - sleep
+            - "1"
       containers:
-      - name: podinfod
-        image: stefanprodan/podinfo:3.1.5
+        - name: podinfod
+          image: stefanprodan/podinfo:3.1.5
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 9898
+              protocol: TCP
+            - name: http-metrics
+              containerPort: 9797
+              protocol: TCP
+            - name: grpc
+              containerPort: 9999
+              protocol: TCP
+          command:
+            - ./podinfo
+            - --port=9898
+            - --port-metrics=9797
+            - --grpc-port=9999
+            - --grpc-service-name=podinfo
+            - --level=info
+            - --random-delay=false
+            - --random-error=false
+          env:
+            - name: PODINFO_UI_COLOR
+              value: "#7700ff"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 9898
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 9898
+          resources:
+            limits:
+              cpu: 1000m
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+---
+apiVersion: helm.fluxcd.io/v1
+kind: HelmRelease
+metadata:
+  name: velero
+  namespace: velero
+spec:
+  releaseName: velero
+  targetNamespace: velero
+  chart:
+    repository: https://vmware-tanzu.github.io/helm-charts
+    name: velero
+    version: 1.24.4
+  values:
+    image:
+      repository: velero/velero
+      tag: v1.2.0
+      pullPolicy: IfNotPresent
+    initContainers:
+      - name: velero-plugin-for-aws
+        image: velero/velero-plugin-for-aws:v1.0.0
         imagePullPolicy: IfNotPresent
-        ports:
-        - name: http
-          containerPort: 9898
-          protocol: TCP
-        - name: http-metrics
-          containerPort: 9797
-          protocol: TCP
-        - name: grpc
-          containerPort: 9999
-          protocol: TCP
-        command:
-        - ./podinfo
-        - --port=9898
-        - --port-metrics=9797
-        - --grpc-port=9999
-        - --grpc-service-name=podinfo
-        - --level=info
-        - --random-delay=false
-        - --random-error=false
-        env:
-        - name: PODINFO_UI_COLOR
-          value: "#7700ff"
-        livenessProbe:
-          httpGet:
-            path: /healthz
-            port: 9898
-        readinessProbe:
-          httpGet:
-            path: /readyz
-            port: 9898
-        resources:
-          limits:
-            cpu: 1000m
-            memory: 128Mi
-          requests:
-            cpu: 10m
-            memory: 64Mi
+        volumeMounts:
+          - mountPath: /target
+            name: plugins
+    configuration:
+      # Cloud provider being used (e.g. aws, azure, gcp).
+      provider: aws
+
+      # Parameters for the `default` BackupStorageLocation. See
+      # https://velero.io/docs/v1.0.0/api-types/backupstoragelocation/
+      backupStorageLocation:
+        # Cloud provider where backups should be stored. Usually should
+        # match `configuration.provider`. Required.
+        name: aws
+        # Bucket to store backups in. Required.
+        bucket: faqvelerobackup
+        # Prefix within bucket under which to store backups. Optional.
+        prefix: helmbackups
+        # Additional provider-specific configuration. See link above
+        # for details of required/optional fields for your provider.
+        config:
+          region: us-east-2
+      volumeSnapshotLocation:
+        name: aws
+        config:
+          region: us-east-2
+    rbac:
+      create: true
+      clusterAdministrator: true
+    serviceAccount:
+      server:
+        create: true
+        name:
+        annotations:
+    credentials:
+      useSecret: true
+      secretContents:
+        cloud: |
+          [default]
+          aws_access_key_id=AKIAZK26NN6PU3HNMRXQ
+          aws_secret_access_key=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
+    snapshotsEnabled: true
+    deployRestic: false
+    # Backup schedules to create.
+    # Eg:
+    # schedules:
+    #   mybackup:
+    #     schedule: "0 0 * * *"
+    #     template:
+    #       ttl: "240h"
+    #       includedNamespaces:
+    #        - foo
+    schedules:
+      awsbackup:
+        schedule: "*/20 * * * *"
+        template:
+          ttl: "1h"
+
